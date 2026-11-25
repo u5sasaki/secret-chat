@@ -1,0 +1,15 @@
+{
+  "name": "secret-url-chat",
+  "version": "1.0.0",
+  "description": "URLを知っている人だけが入れるグループチャット（24時間で自動削除・画像送信対応）",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
