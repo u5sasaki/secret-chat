@@ -80,6 +80,102 @@ function cleanup() {
 }
 setInterval(cleanup, 10 * 60 * 1000);
 
+// ---- 管理者への通知（Telegram / メール。どちらも任意・両方同時も可） ----
+// Telegram: TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID（ほぼリアルタイム。連続投稿は5秒ごとにまとめる）
+//   PUBLIC_URL（任意）: 例 https://xxxx.onrender.com  → 通知にチャットへのリンクを付ける
+// メール: RESEND_API_KEY, NOTIFY_EMAIL（RenderはSMTPが使えないためResendのHTTP APIを使用）
+//   NOTIFY_INTERVAL_MIN: メール通知の最短間隔（分, 既定10）
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
+const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.org';
+const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || '';
+const NOTIFY_FROM = process.env.NOTIFY_FROM || 'グループチャット <onboarding@resend.dev>';
+const RESEND_API_URL = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
+const EMAIL_INTERVAL = Math.max(1, Number(process.env.NOTIFY_INTERVAL_MIN) || 10) * 60 * 1000;
+const TELEGRAM_INTERVAL = Number(process.env.TELEGRAM_INTERVAL_SEC || 5) * 1000;
+const EMAIL_DAILY_MAX = 90; // Resend無料枠(1日100通)を超えないための上限
+const TELEGRAM_ENABLED = !!(TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID);
+const EMAIL_ENABLED = !!(RESEND_API_KEY && NOTIFY_EMAIL);
+
+function fmtJst(ts) {
+  return new Date(ts).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', hour12: false });
+}
+function fmtLine(m) {
+  const t = m.text.trim().slice(0, 300);
+  return `${m.name}: ${t}${m.image ? (t ? ' ' : '') + '(画像あり)' : ''}`;
+}
+
+// 最短間隔つきのまとめ送り。最初の1件はすぐ送り、間隔内の投稿は次の送信にまとめる。
+function makeNotifier(intervalMs, send) {
+  let pending = [];
+  let timer = null;
+  let lastAt = 0;
+  async function flush() {
+    timer = null;
+    if (!pending.length) return;
+    const batch = pending;
+    pending = [];
+    lastAt = Date.now();
+    try {
+      await send(batch);
+    } catch (e) {
+      console.error('通知に失敗:', e.message);
+    }
+  }
+  return function push(m) {
+    pending.push(m);
+    if (timer) return;
+    timer = setTimeout(flush, Math.max(0, lastAt + intervalMs - Date.now()));
+  };
+}
+
+const telegramPush = TELEGRAM_ENABLED
+  ? makeNotifier(TELEGRAM_INTERVAL, async (batch) => {
+      const shown = batch.slice(-10);
+      let text = shown.map(fmtLine).join('\n');
+      if (batch.length > shown.length) text = `（ほか${batch.length - shown.length}件）\n` + text;
+      if (PUBLIC_URL) text += `\n\n${PUBLIC_URL}${BASE}`;
+      const r = await fetch(`${TELEGRAM_API_URL}/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: TELEGRAM_CHAT_ID,
+          text: text.slice(0, 4000),
+          disable_web_page_preview: true,
+        }),
+      });
+      if (!r.ok) console.error('Telegram通知に失敗:', r.status, (await r.text()).slice(0, 200));
+    })
+  : null;
+
+let emailSent = { day: '', n: 0 };
+const emailPush = EMAIL_ENABLED
+  ? makeNotifier(EMAIL_INTERVAL, async (batch) => {
+      const day = new Date().toISOString().slice(0, 10);
+      if (emailSent.day !== day) emailSent = { day, n: 0 };
+      if (emailSent.n >= EMAIL_DAILY_MAX) return;
+      emailSent.n++;
+      const subject =
+        batch.length === 1
+          ? `チャットに新しい投稿（${batch[0].name}さん）`
+          : `チャットに新しい投稿が${batch.length}件あります`;
+      const body = batch.map((m) => `[${fmtJst(m.ts)}] ${fmtLine(m)}`).join('\n\n');
+      const r = await fetch(RESEND_API_URL, {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + RESEND_API_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: NOTIFY_FROM, to: [NOTIFY_EMAIL], subject, text: body }),
+      });
+      if (!r.ok) console.error('メール通知に失敗:', r.status, (await r.text()).slice(0, 200));
+    })
+  : null;
+
+function notifyAdmin(m) {
+  if (telegramPush) telegramPush(m);
+  if (emailPush) emailPush(m);
+}
+
 // ---- HTTP ----
 const INDEX = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
 const MIME = { jpg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
@@ -252,6 +348,7 @@ wss.on('connection', (ws) => {
     messages.push(m);
     scheduleSave();
     broadcast({ type: 'msg', message: m });
+    notifyAdmin(m);
   });
 
   ws.on('close', sendPresence);
@@ -274,4 +371,6 @@ server.listen(PORT, () => {
   console.log('チャットを起動しました。参加用URLのパス:');
   console.log('  ' + BASE);
   console.log('  例: http://localhost:' + PORT + BASE);
+  console.log('Telegram通知: ' + (TELEGRAM_ENABLED ? '有効' : '無効') + ' / メール通知: ' + (EMAIL_ENABLED ? '有効' : '無効'));
 });
+
