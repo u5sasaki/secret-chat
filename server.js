@@ -16,7 +16,7 @@ const MSG_FILE = path.join(DATA_DIR, 'messages.json');
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const MAX_TEXT = 2000;
-const MAX_NAME = 20;
+const MAX_NAME = 30; // 「B201 」＋名前20文字
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -91,7 +91,7 @@ const TELEGRAM_API_URL = process.env.TELEGRAM_API_URL || 'https://api.telegram.o
 const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/+$/, '');
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const NOTIFY_EMAIL = process.env.NOTIFY_EMAIL || '';
-const NOTIFY_FROM = process.env.NOTIFY_FROM || 'グループチャット <onboarding@resend.dev>';
+const NOTIFY_FROM = process.env.NOTIFY_FROM || '静岡用宗Ｂ邸ホワイトボード <onboarding@resend.dev>';
 const RESEND_API_URL = process.env.RESEND_API_URL || 'https://api.resend.com/emails';
 const EMAIL_INTERVAL = Math.max(1, Number(process.env.NOTIFY_INTERVAL_MIN) || 10) * 60 * 1000;
 const TELEGRAM_INTERVAL = Number(process.env.TELEGRAM_INTERVAL_SEC || 5) * 1000;
@@ -373,4 +373,3 @@ server.listen(PORT, () => {
   console.log('  例: http://localhost:' + PORT + BASE);
   console.log('Telegram通知: ' + (TELEGRAM_ENABLED ? '有効' : '無効') + ' / メール通知: ' + (EMAIL_ENABLED ? '有効' : '無効'));
 });
-
