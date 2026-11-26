@@ -145,6 +145,7 @@
   }
   #nameDlg .rooms input:checked + span { background: var(--green); border-color: var(--green); color: #fff; }
   #nameDlg .rooms input:focus-visible + span { outline: 2px solid #333; }
+  #nameDlg .grp { font-size: 12px; font-weight: 600; color: #444; margin: 0 0 6px; }
   #nameDlg .err { color: #d33; font-size: 12px; margin: -6px 0 10px; display: none; }
   #nameDlg button {
     width: 100%; padding: 11px; background: var(--green); color: #fff; border: none; border-radius: 10px;
@@ -180,10 +181,24 @@
   <div class="box">
     <h2>名前を入力</h2>
     <p>お部屋を選んで、名前を入力してください（名前は20文字まで）。</p>
-    <div class="rooms" id="rooms">
-      <label><input type="radio" name="room" value="B201"><span>B201</span></label>
-      <label><input type="radio" name="room" value="B202"><span>B202</span></label>
-      <label><input type="radio" name="room" value="B203"><span>B203</span></label>
+    <div id="roomBox">
+      <div class="grp">静岡用宗Ｂ邸</div>
+      <div class="rooms">
+        <label><input type="radio" name="room" value="B-201"><span>B-201</span></label>
+        <label><input type="radio" name="room" value="B-202"><span>B-202</span></label>
+        <label><input type="radio" name="room" value="B-203"><span>B-203</span></label>
+      </div>
+      <div class="grp">PORTO／静岡用宗Ｄ邸</div>
+      <div class="rooms">
+        <label><input type="radio" name="room" value="P-201"><span>P-201</span></label>
+        <label><input type="radio" name="room" value="P-202"><span>P-202</span></label>
+        <label><input type="radio" name="room" value="P-203"><span>P-203</span></label>
+      </div>
+      <div class="rooms">
+        <label><input type="radio" name="room" value="P-204"><span>P-204</span></label>
+        <label><input type="radio" name="room" value="P-205"><span>P-205</span></label>
+        <label><input type="radio" name="room" value="P-206"><span>P-206</span></label>
+      </div>
     </div>
     <input id="nameInput" maxlength="20" placeholder="例：たろう" autocomplete="nickname">
     <div class="err" id="nameErr">部屋番号を選んでください</div>
@@ -213,11 +228,16 @@
     cid = Math.random().toString(36).slice(2) + Date.now().toString(36);
     ls.set('cid', cid);
   }
-  var ROOMS = ['B201', 'B202', 'B203'];
+  var ROOMS = ['B-201', 'B-202', 'B-203', 'P-201', 'P-202', 'P-203', 'P-204', 'P-205', 'P-206'];
+  var IS_OWNER = document.body.getAttribute('data-role') === 'owner'; // オーナー/家守専用URL
   var myBase = ls.get('name') || '';   // 名前（部屋番号なし）
   var myRoom = ls.get('room') || '';
   if (ROOMS.indexOf(myRoom) < 0) myRoom = '';
-  var myName = (myBase && myRoom) ? myRoom + ' ' + myBase : '';
+  var myName = IS_OWNER ? myBase : ((myBase && myRoom) ? myRoom + ' ' + myBase : '');
+  if (IS_OWNER) {
+    document.getElementById('roomBox').style.display = 'none';
+    document.querySelector('#nameDlg p').textContent = 'オーナー/家守として参加します。名前を入力してください（20文字まで）。';
+  }
   var ws = null, retry = 0, ready = false;
   var pendingImage = null; // {name, objectUrl}
   var uploading = false;
@@ -269,7 +289,7 @@
     var av = document.createElement('div');
     av.className = 'avatar';
     av.style.background = colorFor(m.name);
-    av.textContent = Array.from(m.name.replace(/^B\d{3} /, ''))[0] || '?';
+    av.textContent = Array.from(m.name.replace(/^(B-20\d|P-20\d|オーナー\/家守) /, ''))[0] || '?';
     row.appendChild(av);
 
     var col = document.createElement('div');
@@ -483,7 +503,7 @@
   var nameInput = document.getElementById('nameInput');
   function askName() {
     nameInput.value = myBase;
-    var rs = document.querySelectorAll('#rooms input');
+    var rs = document.querySelectorAll('#roomBox input');
     for (var i = 0; i < rs.length; i++) rs[i].checked = (rs[i].value === myRoom);
     document.getElementById('nameErr').style.display = 'none';
     dlg.style.display = 'flex';
@@ -491,12 +511,12 @@
   }
   function commitName() {
     var v = nameInput.value.trim().slice(0, 20);
-    var sel = document.querySelector('#rooms input:checked');
+    var sel = IS_OWNER ? { value: '' } : document.querySelector('#roomBox input:checked');
     if (!sel) { document.getElementById('nameErr').style.display = 'block'; return; }
     if (!v) return;
     myBase = v;
     myRoom = sel.value;
-    myName = myRoom + ' ' + myBase;
+    myName = IS_OWNER ? myBase : myRoom + ' ' + myBase;
     ls.set('name', v);
     ls.set('room', myRoom);
     dlg.style.display = 'none';
