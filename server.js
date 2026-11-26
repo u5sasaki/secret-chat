@@ -16,7 +16,7 @@ const MSG_FILE = path.join(DATA_DIR, 'messages.json');
 const TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const MAX_TEXT = 2000;
-const MAX_NAME = 30; // 「B201 」＋名前20文字
+const MAX_NAME = 30; // 「B-201 」＋名前20文字
 
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -38,6 +38,22 @@ if (!/^[A-Za-z0-9_-]{16,}$/.test(TOKEN)) {
   process.exit(1);
 }
 const BASE = '/r/' + TOKEN;
+
+// ---- オーナー/家守 専用URL（環境変数 OWNER_TOKEN で固定） ----
+const OWNER_TOKEN = process.env.OWNER_TOKEN || '';
+if (OWNER_TOKEN && (!/^[A-Za-z0-9_-]{16,}$/.test(OWNER_TOKEN) || OWNER_TOKEN === TOKEN)) {
+  console.error('OWNER_TOKEN は英数字・-・_ の16文字以上で、ROOM_TOKEN とは別の値にしてください。');
+  process.exit(1);
+}
+const OWNER_BASE = OWNER_TOKEN ? '/r/' + OWNER_TOKEN : null;
+const OWNER_LABEL = 'オーナー/家守';
+// パスの先頭部分から、入居者用('tenant')かオーナー用('owner')かを判定
+function roleOf(p) {
+  if (p === BASE || p.startsWith(BASE + '/')) return { role: 'tenant', base: BASE };
+  if (OWNER_BASE && (p === OWNER_BASE || p.startsWith(OWNER_BASE + '/'))) return { role: 'owner', base: OWNER_BASE };
+  return null;
+}
+const ROOM_RE = /^(B-20[1-3]|P-20[1-6]) /;
 
 // ---- メッセージ保存 ----
 let messages = [];
@@ -178,6 +194,7 @@ function notifyAdmin(m) {
 
 // ---- HTTP ----
 const INDEX = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
+const INDEX_OWNER = Buffer.from(INDEX.toString('utf8').replace('<body>', '<body data-role="owner">'));
 const MIME = { jpg: 'image/jpeg', png: 'image/png', gif: 'image/gif', webp: 'image/webp' };
 
 function baseHeaders(extra) {
@@ -218,7 +235,11 @@ const server = http.createServer((req, res) => {
     return res.end('ok');
   }
 
-  if (req.method === 'GET' && (p === BASE || p === BASE + '/')) {
+  const rr = roleOf(p);
+  if (!rr) return notFound(res);
+  const base = rr.base;
+
+  if (req.method === 'GET' && (p === base || p === base + '/')) {
     res.writeHead(
       200,
       baseHeaders({
@@ -227,11 +248,11 @@ const server = http.createServer((req, res) => {
           "default-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'",
       })
     );
-    return res.end(INDEX);
+    return res.end(rr.role === 'owner' ? INDEX_OWNER : INDEX);
   }
 
-  if (req.method === 'GET' && p.startsWith(BASE + '/img/')) {
-    const name = p.slice((BASE + '/img/').length);
+  if (req.method === 'GET' && p.startsWith(base + '/img/')) {
+    const name = p.slice((base + '/img/').length);
     if (!/^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(name)) return notFound(res);
     const file = path.join(UPLOAD_DIR, name);
     fs.readFile(file, (err, data) => {
@@ -248,7 +269,7 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (req.method === 'POST' && p === BASE + '/upload') {
+  if (req.method === 'POST' && p === base + '/upload') {
     const chunks = [];
     let size = 0;
     let aborted = false;
@@ -292,11 +313,15 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
 server.on('upgrade', (req, socket, head) => {
   const p = new URL(req.url, 'http://x').pathname;
-  if (p !== BASE + '/ws') {
+  const rr = roleOf(p);
+  if (!rr || p !== rr.base + '/ws') {
     socket.destroy();
     return;
   }
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws));
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    ws.role = rr.role;
+    wss.emit('connection', ws);
+  });
 });
 
 function broadcast(obj) {
@@ -331,7 +356,13 @@ wss.on('connection', (ws) => {
     if (ws.sendTimes.length >= 20) return; // 10秒に20通まで
     ws.sendTimes.push(now);
 
-    const name = String(d.name || '').trim().slice(0, MAX_NAME);
+    let name = String(d.name || '').trim().slice(0, MAX_NAME);
+    if (ws.role === 'owner') {
+      // オーナー/家守: 名前の頭にラベルをサーバー側で付ける（なりすまし防止）
+      name = (OWNER_LABEL + ' ' + name.replace(ROOM_RE, '').replace(OWNER_LABEL, '').trim()).slice(0, 40);
+    } else if (!ROOM_RE.test(name) || name.length <= 6) {
+      return; // 入居者は部屋番号が必須
+    }
     const text = String(d.text || '').slice(0, MAX_TEXT);
     const image = typeof d.image === 'string' && /^[a-f0-9]{32}\.(jpg|png|gif|webp)$/.test(d.image) ? d.image : null;
     if (!name || (!text.trim() && !image)) return;
@@ -369,7 +400,8 @@ setInterval(() => {
 server.listen(PORT, () => {
   cleanup(); // 起動時にも期限切れを掃除（wss初期化後に実行）
   console.log('チャットを起動しました。参加用URLのパス:');
-  console.log('  ' + BASE);
+  console.log('  入居者用: ' + BASE);
+  console.log('  オーナー/家守用: ' + (OWNER_BASE || '（未設定。環境変数 OWNER_TOKEN を設定すると有効）'));
   console.log('  例: http://localhost:' + PORT + BASE);
   console.log('Telegram通知: ' + (TELEGRAM_ENABLED ? '有効' : '無効') + ' / メール通知: ' + (EMAIL_ENABLED ? '有効' : '無効'));
 });
