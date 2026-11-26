@@ -193,6 +193,62 @@ function notifyAdmin(m) {
   if (emailPush) emailPush(m);
 }
 
+// ---- Google Drive への定期バックアップ（利用者には表示しない） ----
+// Google Apps Script のウェブアプリ(GDRIVE_WEBHOOK_URL)へ、新しいメッセージと画像を送る。
+const GDRIVE_WEBHOOK_URL = process.env.GDRIVE_WEBHOOK_URL || '';
+const GDRIVE_SECRET = process.env.GDRIVE_SECRET || '';
+const GDRIVE_INTERVAL_MIN = Math.max(5, Number(process.env.GDRIVE_INTERVAL_MIN) || 60);
+const GDRIVE_ENABLED = !!(GDRIVE_WEBHOOK_URL && GDRIVE_SECRET);
+const backedUp = new Set(); // 保存済みメッセージID（再起動後はGoogle側が重複を除外）
+let backupRunning = false;
+
+async function backupToDrive() {
+  if (!GDRIVE_ENABLED || backupRunning) return;
+  backupRunning = true;
+  try {
+    const pending = messages.filter((m) => !backedUp.has(m.id));
+    for (let i = 0; i < pending.length; ) {
+      // 1回の送信は、メッセージ最大200件・画像最大8枚・約12MBまで
+      const batch = [];
+      const images = [];
+      let bytes = 0;
+      while (i < pending.length && batch.length < 200) {
+        const m = pending[i];
+        let img = null;
+        if (m.image) {
+          try {
+            const buf = await fs.promises.readFile(path.join(UPLOAD_DIR, m.image));
+            img = { name: m.image, data: buf.toString('base64') };
+          } catch (_) {} // 画像が既に無い場合はメッセージだけ保存
+        }
+        if (img && batch.length > 0 && (images.length >= 8 || bytes + img.data.length > 12 * 1024 * 1024)) break;
+        batch.push(m);
+        if (img) {
+          images.push(img);
+          bytes += img.data.length;
+        }
+        i++;
+      }
+      const res = await fetch(GDRIVE_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ secret: GDRIVE_SECRET, messages: batch, images }),
+        redirect: 'follow',
+      });
+      const j = await res.json().catch(() => null);
+      if (!j || !j.ok) throw new Error('Drive応答エラー: ' + (j && j.error ? j.error : res.status));
+      for (const m of batch) backedUp.add(m.id);
+    }
+    // 古いIDの掃除
+    const live = new Set(messages.map((m) => m.id));
+    for (const id of backedUp) if (!live.has(id)) backedUp.delete(id);
+  } catch (e) {
+    console.error('Driveバックアップ失敗（次回再試行）:', e.message); // ログのみ。画面には出さない
+  } finally {
+    backupRunning = false;
+  }
+}
+
 // ---- HTTP ----
 const INDEX = fs.readFileSync(path.join(__dirname, 'public', 'index.html'));
 const INDEX_OWNER = Buffer.from(INDEX.toString('utf8').replace('<body>', '<body data-role="owner">'));
@@ -399,10 +455,14 @@ setInterval(() => {
 }, 30000);
 
 server.listen(PORT, () => {
-  cleanup(); // 起動時にも期限切れを掃除（wss初期化後に実行）
+  cleanup();
+  if (GDRIVE_ENABLED) {
+    setTimeout(backupToDrive, 60 * 1000);
+    setInterval(backupToDrive, GDRIVE_INTERVAL_MIN * 60 * 1000);
+  } // 起動時にも期限切れを掃除（wss初期化後に実行）
   console.log('チャットを起動しました。参加用URLのパス:');
   console.log('  入居者用: ' + BASE);
   console.log('  オーナー/家守用: ' + (OWNER_BASE || '（未設定。環境変数 OWNER_TOKEN を設定すると有効）'));
   console.log('  例: http://localhost:' + PORT + BASE);
-  console.log('Telegram通知: ' + (TELEGRAM_ENABLED ? '有効' : '無効') + ' / メール通知: ' + (EMAIL_ENABLED ? '有効' : '無効'));
+  console.log('Telegram通知: ' + (TELEGRAM_ENABLED ? '有効' : '無効') + ' / メール通知: ' + (EMAIL_ENABLED ? '有効' : '無効') + ' / Driveバックアップ: ' + (GDRIVE_ENABLED ? GDRIVE_INTERVAL_MIN + '分ごと' : '無効'));
 });
