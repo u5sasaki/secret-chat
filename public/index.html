@@ -70,8 +70,7 @@
     text-align: center;
   }
   .row { display: flex; align-items: flex-end; gap: 6px; max-width: 100%; }
-  .row { flex-direction: row-reverse; }   /* 他人: 右寄せ */
-  .row.me { flex-direction: row; }        /* 自分: 左寄せ */
+  .row.me { flex-direction: row-reverse; }   /* 自分: 右寄せ（LINE風） */
   .avatar {
     width: 34px; height: 34px; border-radius: 50%;
     flex: 0 0 auto; color: #fff; font-weight: 600; font-size: 14px;
@@ -79,12 +78,10 @@
   }
   .row.me .avatar { display: none; }
   .col { display: flex; flex-direction: column; max-width: 72%; min-width: 0; }
-  .col { align-items: flex-end; }
-  .row.me .col { align-items: flex-start; }
-  .who { font-size: 11px; color: #f2f5fa; margin: 0 4px 2px 0; text-shadow: 0 1px 1px rgba(0,0,0,.2); }
+  .row.me .col { align-items: flex-end; }
+  .who { font-size: 11px; color: #f2f5fa; margin: 0 0 2px 4px; text-shadow: 0 1px 1px rgba(0,0,0,.2); }
   .line { display: flex; align-items: flex-end; gap: 5px; }
-  .line { flex-direction: row-reverse; }
-  .row.me .line { flex-direction: row; }
+  .row.me .line { flex-direction: row-reverse; }
   .bubble {
     padding: 8px 12px;
     border-radius: 16px;
