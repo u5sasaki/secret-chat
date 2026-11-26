@@ -136,6 +136,16 @@
   #nameDlg input {
     width: 100%; font-size: 16px; padding: 10px 12px; border: 1px solid #ccc; border-radius: 10px; margin-bottom: 12px;
   }
+  #nameDlg .rooms { display: flex; gap: 8px; margin-bottom: 12px; }
+  #nameDlg .rooms label { flex: 1; cursor: pointer; }
+  #nameDlg .rooms input { position: absolute; opacity: 0; width: 0; height: 0; margin: 0; }
+  #nameDlg .rooms span {
+    display: block; text-align: center; padding: 10px 0; border: 1px solid #ccc; border-radius: 10px;
+    font-size: 15px; font-weight: 600; color: #444;
+  }
+  #nameDlg .rooms input:checked + span { background: var(--green); border-color: var(--green); color: #fff; }
+  #nameDlg .rooms input:focus-visible + span { outline: 2px solid #333; }
+  #nameDlg .err { color: #d33; font-size: 12px; margin: -6px 0 10px; display: none; }
   #nameDlg button {
     width: 100%; padding: 11px; background: var(--green); color: #fff; border: none; border-radius: 10px;
     font-size: 15px; font-weight: 600; cursor: pointer;
@@ -169,8 +179,14 @@
 <div id="nameDlg">
   <div class="box">
     <h2>名前を入力</h2>
-    <p>チャットに表示される名前です（20文字まで）。</p>
+    <p>お部屋を選んで、名前を入力してください（名前は20文字まで）。</p>
+    <div class="rooms" id="rooms">
+      <label><input type="radio" name="room" value="B201"><span>B201</span></label>
+      <label><input type="radio" name="room" value="B202"><span>B202</span></label>
+      <label><input type="radio" name="room" value="B203"><span>B203</span></label>
+    </div>
     <input id="nameInput" maxlength="20" placeholder="例：たろう" autocomplete="nickname">
+    <div class="err" id="nameErr">部屋番号を選んでください</div>
     <button id="nameOk" type="button">はじめる</button>
   </div>
 </div>
@@ -197,7 +213,11 @@
     cid = Math.random().toString(36).slice(2) + Date.now().toString(36);
     ls.set('cid', cid);
   }
-  var myName = ls.get('name') || '';
+  var ROOMS = ['B201', 'B202', 'B203'];
+  var myBase = ls.get('name') || '';   // 名前（部屋番号なし）
+  var myRoom = ls.get('room') || '';
+  if (ROOMS.indexOf(myRoom) < 0) myRoom = '';
+  var myName = (myBase && myRoom) ? myRoom + ' ' + myBase : '';
   var ws = null, retry = 0, ready = false;
   var pendingImage = null; // {name, objectUrl}
   var uploading = false;
@@ -249,7 +269,7 @@
     var av = document.createElement('div');
     av.className = 'avatar';
     av.style.background = colorFor(m.name);
-    av.textContent = Array.from(m.name)[0] || '?';
+    av.textContent = Array.from(m.name.replace(/^B\d{3} /, ''))[0] || '?';
     row.appendChild(av);
 
     var col = document.createElement('div');
@@ -462,15 +482,23 @@
   var dlg = document.getElementById('nameDlg');
   var nameInput = document.getElementById('nameInput');
   function askName() {
-    nameInput.value = myName;
+    nameInput.value = myBase;
+    var rs = document.querySelectorAll('#rooms input');
+    for (var i = 0; i < rs.length; i++) rs[i].checked = (rs[i].value === myRoom);
+    document.getElementById('nameErr').style.display = 'none';
     dlg.style.display = 'flex';
     setTimeout(function () { nameInput.focus(); }, 50);
   }
   function commitName() {
     var v = nameInput.value.trim().slice(0, 20);
+    var sel = document.querySelector('#rooms input:checked');
+    if (!sel) { document.getElementById('nameErr').style.display = 'block'; return; }
     if (!v) return;
-    myName = v;
+    myBase = v;
+    myRoom = sel.value;
+    myName = myRoom + ' ' + myBase;
     ls.set('name', v);
+    ls.set('room', myRoom);
     dlg.style.display = 'none';
     updateSend();
     input.focus();
@@ -481,10 +509,9 @@
   });
   document.getElementById('renameBtn').addEventListener('click', askName);
 
-  if (!myName) askName();
+  if (!myName) askName();  // 名前か部屋番号が未設定なら入力させる
   connect();
 })();
 </script>
 </body>
 </html>
-
