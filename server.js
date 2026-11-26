@@ -47,6 +47,7 @@ if (OWNER_TOKEN && (!/^[A-Za-z0-9_-]{16,}$/.test(OWNER_TOKEN) || OWNER_TOKEN ===
 }
 const OWNER_BASE = OWNER_TOKEN ? '/r/' + OWNER_TOKEN : null;
 const OWNER_LABEL = 'オーナー/家守';
+const OWNER_NAME = '佐々木ユキオ';
 // パスの先頭部分から、入居者用('tenant')かオーナー用('owner')かを判定
 function roleOf(p) {
   if (p === BASE || p.startsWith(BASE + '/')) return { role: 'tenant', base: BASE };
@@ -359,7 +360,7 @@ wss.on('connection', (ws) => {
     let name = String(d.name || '').trim().slice(0, MAX_NAME);
     if (ws.role === 'owner') {
       // オーナー/家守: 名前の頭にラベルをサーバー側で付ける（なりすまし防止）
-      name = (OWNER_LABEL + ' ' + name.replace(ROOM_RE, '').replace(OWNER_LABEL, '').trim()).slice(0, 40);
+      name = OWNER_LABEL + ' ' + OWNER_NAME; // オーナー用URLは名前も固定
     } else if (!ROOM_RE.test(name) || name.length <= 6) {
       return; // 入居者は部屋番号が必須
     }
