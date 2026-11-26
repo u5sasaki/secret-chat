@@ -233,10 +233,10 @@
   var myBase = ls.get('name') || '';   // 名前（部屋番号なし）
   var myRoom = ls.get('room') || '';
   if (ROOMS.indexOf(myRoom) < 0) myRoom = '';
-  var myName = IS_OWNER ? myBase : ((myBase && myRoom) ? myRoom + ' ' + myBase : '');
+  var myName = IS_OWNER ? 'オーナー/家守 佐々木ユキオ' : ((myBase && myRoom) ? myRoom + ' ' + myBase : '');
   if (IS_OWNER) {
-    document.getElementById('roomBox').style.display = 'none';
-    document.querySelector('#nameDlg p').textContent = 'オーナー/家守として参加します。名前を入力してください（20文字まで）。';
+    // オーナー用URLは名前固定（入力・変更なし）
+    document.getElementById('renameBtn').style.display = 'none';
   }
   var ws = null, retry = 0, ready = false;
   var pendingImage = null; // {name, objectUrl}
@@ -529,7 +529,7 @@
   });
   document.getElementById('renameBtn').addEventListener('click', askName);
 
-  if (!myName) askName();  // 名前か部屋番号が未設定なら入力させる
+  if (!myName && !IS_OWNER) askName();  // 名前か部屋番号が未設定なら入力させる
   connect();
 })();
 </script>
